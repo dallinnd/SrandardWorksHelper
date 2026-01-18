@@ -28,30 +28,24 @@ let uniqueWords = [];
 let chapterList = [];
 let activeCategories = new Set(BOOKS_CONFIG.map(b => b.id)); 
 let legalTextContent = "Standard Works Data.";
+
 let currentSearchResults = [];
 let renderedCount = 0;
 const BATCH_SIZE = 50;
 let currentChapterIndex = -1;
 
-// --- INITIALIZATION (The Fix) ---
+// --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Initialize Settings & Themes
     initSettings();
-    
-    // 2. Initialize UI Event Listeners (Search, Filters, Modals)
     initUI();
-
-    // 3. Load Data
     await loadAllBooks();
 });
 
 // --- UI SETUP ---
 function initSettings() {
-    // Load saved theme
     const savedTheme = localStorage.getItem('app_theme') || 'theme-light-blue';
     document.body.className = savedTheme;
 
-    // Attach Theme Button Listeners
     const themeBtns = document.querySelectorAll('.theme-btn');
     themeBtns.forEach(btn => {
         btn.onclick = () => {
@@ -61,26 +55,16 @@ function initSettings() {
         };
     });
 
-    // Settings Modal Toggles
     const settingsBtn = document.getElementById('settings-btn');
     const settingsOverlay = document.getElementById('settings-overlay');
     const settingsCloseBtn = document.querySelector('.settings-close');
 
-    if(settingsBtn) {
-        settingsBtn.onclick = () => settingsOverlay.classList.remove('hidden');
-    }
-    if(settingsCloseBtn) {
-        settingsCloseBtn.onclick = () => settingsOverlay.classList.add('hidden');
-    }
-    if(settingsOverlay) {
-        settingsOverlay.onclick = (e) => { 
-            if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); 
-        };
-    }
+    if(settingsBtn) settingsBtn.onclick = () => settingsOverlay.classList.remove('hidden');
+    if(settingsCloseBtn) settingsCloseBtn.onclick = () => settingsOverlay.classList.add('hidden');
+    if(settingsOverlay) settingsOverlay.onclick = (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); };
 }
 
 function initUI() {
-    // Search Inputs
     const input = document.getElementById('search-input');
     const sendBtn = document.getElementById('send-btn');
     
@@ -88,54 +72,32 @@ function initUI() {
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(input.value); });
     sendBtn.addEventListener('click', () => performSearch(input.value));
 
-    // Filters
     renderFilters();
 
-    // Main Modal Close Logic
     const modalOverlay = document.getElementById('modal-overlay');
     const mainCloseBtn = document.querySelector('.main-close');
     
-    if(mainCloseBtn) {
-        mainCloseBtn.onclick = () => modalOverlay.classList.add('hidden');
-    }
-    if(modalOverlay) {
-        modalOverlay.onclick = (e) => { 
-            if (e.target === modalOverlay) modalOverlay.classList.add('hidden'); 
-        };
-    }
+    if(mainCloseBtn) mainCloseBtn.onclick = () => modalOverlay.classList.add('hidden');
+    if(modalOverlay) modalOverlay.onclick = (e) => { if (e.target === modalOverlay) modalOverlay.classList.add('hidden'); };
 
-    // Swipe Gestures (Attached to Content Card)
+    // Swipe Gestures
     const modalContent = document.querySelector('.modal-content');
     let touchStartX = 0;
     
     if(modalContent) {
-        modalContent.addEventListener('touchstart', (e) => {
-            touchStartX = e.changedTouches[0].screenX;
-        }, {passive: true});
-
+        modalContent.addEventListener('touchstart', (e) => touchStartX = e.changedTouches[0].screenX, {passive: true});
         modalContent.addEventListener('touchend', (e) => {
             const nextBtn = document.getElementById('next-chapter-btn');
-            // Only swipe if we are in "Chapter View" (arrows visible)
             if (nextBtn && nextBtn.classList.contains('hidden')) return;
-            
-            const touchEndX = e.changedTouches[0].screenX;
-            const dist = touchStartX - touchEndX;
-            
-            if (dist > 50) navigateChapter(1); // Swipe Left -> Next
-            else if (dist < -50) navigateChapter(-1); // Swipe Right -> Prev
+            const dist = touchStartX - e.changedTouches[0].screenX;
+            if (dist > 50) navigateChapter(1); 
+            else if (dist < -50) navigateChapter(-1);
         }, {passive: true});
     }
 
-    // Legal Link
     const legalLink = document.getElementById('legal-link');
-    if(legalLink) {
-        legalLink.onclick = (e) => { 
-            e.preventDefault(); 
-            openPopup("Legal Disclosure", legalTextContent); 
-        };
-    }
+    if(legalLink) legalLink.onclick = (e) => { e.preventDefault(); openPopup("Legal Disclosure", legalTextContent); };
 
-    // Nav Buttons
     const prevBtn = document.getElementById('prev-chapter-btn');
     const nextBtn = document.getElementById('next-chapter-btn');
     if(prevBtn) prevBtn.onclick = () => navigateChapter(-1);
@@ -253,13 +215,33 @@ function handleSuggestions(e) {
     });
 }
 
+// --- UPDATED SEARCH LOGIC ---
 function performSearch(query) {
     const resultsArea = document.getElementById('results-area');
     if (!query) return;
     resultsArea.innerHTML = '';
     const q = query.toLowerCase();
     
-    currentSearchResults = allVerses.filter(v => activeCategories.has(v.source) && v.text.toLowerCase().includes(q));
+    // 1. SEARCH: Check matches in TEXT OR REFERENCE
+    // We create two groups: "Ref Matches" (High Priority) and "Text Matches" (Low Priority)
+    let refMatches = [];
+    let textMatches = [];
+
+    allVerses.forEach(v => {
+        if (!activeCategories.has(v.source)) return;
+
+        const matchRef = v.ref.toLowerCase().includes(q);
+        const matchText = v.text.toLowerCase().includes(q);
+
+        if (matchRef) {
+            refMatches.push(v);
+        } else if (matchText) {
+            textMatches.push(v);
+        }
+    });
+
+    // Combine: Ref matches first, then text matches
+    currentSearchResults = [...refMatches, ...textMatches];
 
     if (currentSearchResults.length === 0) { 
         resultsArea.innerHTML = '<div class="placeholder-msg">No matches found.</div>'; 
@@ -281,12 +263,18 @@ function renderNextBatch(highlightQuery) {
 
     batch.forEach(verse => {
         const box = document.createElement('div'); box.className = 'verse-box';
+        
+        // Highlight Query in Text
         const snippet = verse.text.replace(new RegExp(`(${highlightQuery})`, 'gi'), '<b style="color:var(--primary);">$1</b>');
+        
+        // Highlight Query in Reference (NEW)
+        const refDisplay = verse.ref.replace(new RegExp(`(${highlightQuery})`, 'gi'), '<span style="background:rgba(37,99,235,0.1); color:var(--primary);">$1</span>');
+
         const sourceBadge = BOOKS_CONFIG.find(b => b.id === verse.source).name;
 
         box.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="verse-ref">${verse.ref}</span>
+                <span class="verse-ref">${refDisplay}</span>
                 <span style="font-size:0.7rem; color:var(--text-light); border:1px solid var(--border); padding:2px 6px; border-radius:4px;">${sourceBadge}</span>
             </div>
             <div class="verse-snippet">${snippet}</div>`;
@@ -324,24 +312,20 @@ function openPopup(verseOrTitle, textIfRef) {
     modalOverlay.classList.remove('hidden'); 
     modalFooter.innerHTML = '';
     
-    // Hide arrows by default (Search View)
     if(prevBtn) prevBtn.classList.add('hidden');
     if(nextBtn) nextBtn.classList.add('hidden');
     
     if (typeof verseOrTitle === 'string') { 
-        // Simple Text (Legal)
         modalRef.innerText = verseOrTitle; 
         modalText.innerText = textIfRef; 
         return; 
     }
 
-    // Verse Object
     const verse = verseOrTitle; 
     modalRef.innerText = verse.ref; 
     modalText.innerText = verse.text; 
     modalText.scrollTop = 0;
     
-    // Create Chapter Button
     const chapterBtn = document.createElement('button'); 
     chapterBtn.className = 'action-btn';
     chapterBtn.innerText = `View Chapter (${verse.chapterId})`; 
@@ -355,7 +339,6 @@ function viewChapter(chapterId) {
     
     loadChapterContent(chapterId);
     
-    // Show arrows
     document.getElementById('prev-chapter-btn').classList.remove('hidden');
     document.getElementById('next-chapter-btn').classList.remove('hidden');
     
