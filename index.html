@@ -10,7 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="theme-light-blue"> <div class="app-container">
+<body class="theme-light-blue">
+
+  <div class="app-container">
     <header>
       <div class="header-top">
         <h1>Scripture Helper</h1>
@@ -48,7 +50,7 @@
           <button id="next-chapter-btn" class="nav-arrow hidden">&gt;</button>
           <span class="modal-ref">Scripture View</span>
         </div>
-        <button class="close-btn">&times;</button>
+        <button class="close-btn main-close">&times;</button>
       </div>
       <div id="modal-text" class="modal-body"></div>
       <div class="modal-footer"></div>
@@ -58,30 +60,16 @@
   <div id="settings-overlay" class="modal-overlay hidden">
     <div class="modal-content settings-content">
       <div class="modal-header">
-        <span class="modal-ref">Display Settings</span>
-        <button class="close-settings-btn close-btn">&times;</button>
+        <span class="modal-ref">Select Theme</span>
+        <button class="close-btn settings-close">&times;</button>
       </div>
       <div class="modal-body settings-body">
-        
-        <div class="settings-section">
-          <h3>Text Size</h3>
-          <div class="size-controls">
-            <button id="decrease-text">A-</button>
-            <span id="current-size-label">Medium</span>
-            <button id="increase-text">A+</button>
-          </div>
+        <div class="theme-grid">
+          <button class="theme-btn" data-theme="theme-light-blue" style="background:#fff; color:#2563eb; border-color:#2563eb;">Light Blue</button>
+          <button class="theme-btn" data-theme="theme-light-sepia" style="background:#fdf6e3; color:#5f4b32; border-color:#d3c6aa;">Sepia</button>
+          <button class="theme-btn" data-theme="theme-dark-grey" style="background:#1e293b; color:#fff; border-color:#475569;">Dark Grey</button>
+          <button class="theme-btn" data-theme="theme-dark-black" style="background:#000000; color:#e5e5e5; border-color:#333;">OLED Black</button>
         </div>
-
-        <div class="settings-section">
-          <h3>Theme</h3>
-          <div class="theme-grid">
-            <button class="theme-btn" data-theme="theme-light-blue" style="background:#fff; color:#2563eb; border-color:#2563eb;">Light Blue</button>
-            <button class="theme-btn" data-theme="theme-light-sepia" style="background:#fdf6e3; color:#5f4b32; border-color:#d3c6aa;">Sepia</button>
-            <button class="theme-btn" data-theme="theme-dark-grey" style="background:#1e293b; color:#fff; border-color:#475569;">Dark Grey</button>
-            <button class="theme-btn" data-theme="theme-dark-black" style="background:#000000; color:#e5e5e5; border-color:#333;">OLED Black</button>
-          </div>
-        </div>
-
       </div>
     </div>
   </div>
