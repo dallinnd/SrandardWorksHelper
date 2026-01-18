@@ -28,99 +28,145 @@ let uniqueWords = [];
 let chapterList = [];
 let activeCategories = new Set(BOOKS_CONFIG.map(b => b.id)); 
 let legalTextContent = "Standard Works Data.";
-
 let currentSearchResults = [];
 let renderedCount = 0;
 const BATCH_SIZE = 50;
+let currentChapterIndex = -1;
 
-// DOM Elements
-const input = document.getElementById('search-input');
-const sendBtn = document.getElementById('send-btn');
-const suggestionsArea = document.getElementById('suggestions-area');
-const resultsArea = document.getElementById('results-area');
-
-// Modal Elements
-const modalOverlay = document.getElementById('modal-overlay');
-const modalText = document.getElementById('modal-text');
-const modalRef = document.querySelector('.modal-ref');
-const mainCloseBtn = document.querySelector('.main-close');
-const legalLink = document.getElementById('legal-link');
-const filtersContainer = document.getElementById('category-filters');
-const modalFooter = document.querySelector('.modal-footer') || createModalFooter();
-const prevBtn = document.getElementById('prev-chapter-btn');
-const nextBtn = document.getElementById('next-chapter-btn');
-
-// Settings Elements
-const settingsBtn = document.getElementById('settings-btn');
-const settingsOverlay = document.getElementById('settings-overlay');
-const settingsCloseBtn = document.querySelector('.settings-close');
-const themeBtns = document.querySelectorAll('.theme-btn');
-
-function createModalFooter() {
-    const f = document.createElement('div');
-    f.className = 'modal-footer';
-    document.querySelector('.modal-content').appendChild(f);
-    return f;
-}
-
-// --- Initialization ---
+// --- INITIALIZATION (The Fix) ---
 document.addEventListener('DOMContentLoaded', async () => {
-    loadSettings();
-    renderFilters();
+    // 1. Initialize Settings & Themes
+    initSettings();
+    
+    // 2. Initialize UI Event Listeners (Search, Filters, Modals)
+    initUI();
+
+    // 3. Load Data
     await loadAllBooks();
 });
 
-// --- SETTINGS LOGIC ---
-function loadSettings() {
+// --- UI SETUP ---
+function initSettings() {
+    // Load saved theme
     const savedTheme = localStorage.getItem('app_theme') || 'theme-light-blue';
     document.body.className = savedTheme;
+
+    // Attach Theme Button Listeners
+    const themeBtns = document.querySelectorAll('.theme-btn');
+    themeBtns.forEach(btn => {
+        btn.onclick = () => {
+            const theme = btn.getAttribute('data-theme');
+            document.body.className = theme;
+            localStorage.setItem('app_theme', theme);
+        };
+    });
+
+    // Settings Modal Toggles
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsOverlay = document.getElementById('settings-overlay');
+    const settingsCloseBtn = document.querySelector('.settings-close');
+
+    if(settingsBtn) {
+        settingsBtn.onclick = () => settingsOverlay.classList.remove('hidden');
+    }
+    if(settingsCloseBtn) {
+        settingsCloseBtn.onclick = () => settingsOverlay.classList.add('hidden');
+    }
+    if(settingsOverlay) {
+        settingsOverlay.onclick = (e) => { 
+            if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); 
+        };
+    }
 }
 
-// Settings Event Listeners
-settingsBtn.onclick = () => settingsOverlay.classList.remove('hidden');
-settingsCloseBtn.onclick = () => settingsOverlay.classList.add('hidden');
-settingsOverlay.addEventListener('click', (e) => { 
-    if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); 
-});
+function initUI() {
+    // Search Inputs
+    const input = document.getElementById('search-input');
+    const sendBtn = document.getElementById('send-btn');
+    
+    input.addEventListener('input', handleSuggestions);
+    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(input.value); });
+    sendBtn.addEventListener('click', () => performSearch(input.value));
 
-themeBtns.forEach(btn => {
-    btn.onclick = () => {
-        const theme = btn.getAttribute('data-theme');
-        document.body.className = theme;
-        localStorage.setItem('app_theme', theme);
-    };
-});
+    // Filters
+    renderFilters();
 
-// --- REST OF APP LOGIC ---
+    // Main Modal Close Logic
+    const modalOverlay = document.getElementById('modal-overlay');
+    const mainCloseBtn = document.querySelector('.main-close');
+    
+    if(mainCloseBtn) {
+        mainCloseBtn.onclick = () => modalOverlay.classList.add('hidden');
+    }
+    if(modalOverlay) {
+        modalOverlay.onclick = (e) => { 
+            if (e.target === modalOverlay) modalOverlay.classList.add('hidden'); 
+        };
+    }
+
+    // Swipe Gestures (Attached to Content Card)
+    const modalContent = document.querySelector('.modal-content');
+    let touchStartX = 0;
+    
+    if(modalContent) {
+        modalContent.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, {passive: true});
+
+        modalContent.addEventListener('touchend', (e) => {
+            const nextBtn = document.getElementById('next-chapter-btn');
+            // Only swipe if we are in "Chapter View" (arrows visible)
+            if (nextBtn && nextBtn.classList.contains('hidden')) return;
+            
+            const touchEndX = e.changedTouches[0].screenX;
+            const dist = touchStartX - touchEndX;
+            
+            if (dist > 50) navigateChapter(1); // Swipe Left -> Next
+            else if (dist < -50) navigateChapter(-1); // Swipe Right -> Prev
+        }, {passive: true});
+    }
+
+    // Legal Link
+    const legalLink = document.getElementById('legal-link');
+    if(legalLink) {
+        legalLink.onclick = (e) => { 
+            e.preventDefault(); 
+            openPopup("Legal Disclosure", legalTextContent); 
+        };
+    }
+
+    // Nav Buttons
+    const prevBtn = document.getElementById('prev-chapter-btn');
+    const nextBtn = document.getElementById('next-chapter-btn');
+    if(prevBtn) prevBtn.onclick = () => navigateChapter(-1);
+    if(nextBtn) nextBtn.onclick = () => navigateChapter(1);
+}
+
+// --- CORE LOGIC ---
 
 function renderFilters() {
+    const filtersContainer = document.getElementById('category-filters');
+    const input = document.getElementById('search-input');
+    
     filtersContainer.innerHTML = '';
     BOOKS_CONFIG.forEach(book => {
         const btn = document.createElement('button');
         btn.className = `filter-chip ${activeCategories.has(book.id) ? 'active' : ''}`;
         btn.innerText = book.name;
-        btn.onclick = () => toggleCategory(book.id, btn);
+        btn.onclick = () => {
+            if (activeCategories.has(book.id)) {
+                activeCategories.delete(book.id);
+                btn.classList.remove('active');
+            } else {
+                activeCategories.add(book.id);
+                btn.classList.add('active');
+            }
+            if (input.value.length > 2) performSearch(input.value);
+        };
         filtersContainer.appendChild(btn);
     });
 }
 
-function toggleCategory(id, btnElement) {
-    if (activeCategories.has(id)) {
-        activeCategories.delete(id);
-        btnElement.classList.remove('active');
-    } else {
-        activeCategories.add(id);
-        btnElement.classList.add('active');
-    }
-    if (input.value.length > 2) performSearch(input.value);
-}
-
-function updateStatus(msg) {
-    const el = document.querySelector('.placeholder-msg');
-    if(el) el.innerText = msg;
-}
-
-// --- CORE: Load File & Sort ---
 async function loadAllBooks() {
     updateStatus("Loading Library...");
     allVerses = [];
@@ -188,11 +234,16 @@ function parseBookText(fullText, config, wordSet, chapterSet) {
     });
 }
 
-// --- Search & UI ---
-input.addEventListener('input', (e) => {
+// --- SEARCH & SUGGESTIONS ---
+
+function handleSuggestions(e) {
     const val = e.target.value.toLowerCase();
+    const suggestionsArea = document.getElementById('suggestions-area');
+    const input = document.getElementById('search-input');
+    
     suggestionsArea.innerHTML = '';
     if (val.length < 2) return;
+
     const matches = uniqueWords.filter(w => w.startsWith(val)).slice(0, 15);
     matches.forEach(word => {
         const pill = document.createElement('div');
@@ -200,11 +251,10 @@ input.addEventListener('input', (e) => {
         pill.onclick = () => { input.value = word; suggestionsArea.innerHTML = ''; performSearch(word); };
         suggestionsArea.appendChild(pill);
     });
-});
-sendBtn.addEventListener('click', () => performSearch(input.value));
-input.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(input.value); });
+}
 
 function performSearch(query) {
+    const resultsArea = document.getElementById('results-area');
     if (!query) return;
     resultsArea.innerHTML = '';
     const q = query.toLowerCase();
@@ -221,6 +271,7 @@ function performSearch(query) {
 }
 
 function renderNextBatch(highlightQuery) {
+    const resultsArea = document.getElementById('results-area');
     const start = renderedCount;
     const end = Math.min(renderedCount + BATCH_SIZE, currentSearchResults.length);
     const batch = currentSearchResults.slice(start, end);
@@ -255,59 +306,95 @@ function renderNextBatch(highlightQuery) {
     }
 }
 
-// --- Popup & Nav ---
-let currentChapterIndex = -1;
-function openPopup(verseOrTitle, textIfRef) {
-    modalOverlay.classList.remove('hidden'); modalFooter.innerHTML = '';
-    prevBtn.classList.add('hidden'); nextBtn.classList.add('hidden');
-    if (typeof verseOrTitle === 'string') { modalRef.innerText = verseOrTitle; modalText.innerText = textIfRef; return; }
+function updateStatus(msg) {
+    const el = document.querySelector('.placeholder-msg');
+    if(el) el.innerText = msg;
+}
 
-    const verse = verseOrTitle; modalRef.innerText = verse.ref; modalText.innerText = verse.text; modalText.scrollTop = 0;
-    const chapterBtn = document.createElement('button'); chapterBtn.className = 'action-btn';
-    chapterBtn.innerText = `View Chapter (${verse.chapterId})`; chapterBtn.onclick = () => viewChapter(verse.chapterId);
+// --- MODAL & NAV ---
+
+function openPopup(verseOrTitle, textIfRef) {
+    const modalOverlay = document.getElementById('modal-overlay');
+    const modalRef = document.querySelector('.modal-ref');
+    const modalText = document.getElementById('modal-text');
+    const prevBtn = document.getElementById('prev-chapter-btn');
+    const nextBtn = document.getElementById('next-chapter-btn');
+    const modalFooter = document.querySelector('.modal-footer') || createModalFooter();
+
+    modalOverlay.classList.remove('hidden'); 
+    modalFooter.innerHTML = '';
+    
+    // Hide arrows by default (Search View)
+    if(prevBtn) prevBtn.classList.add('hidden');
+    if(nextBtn) nextBtn.classList.add('hidden');
+    
+    if (typeof verseOrTitle === 'string') { 
+        // Simple Text (Legal)
+        modalRef.innerText = verseOrTitle; 
+        modalText.innerText = textIfRef; 
+        return; 
+    }
+
+    // Verse Object
+    const verse = verseOrTitle; 
+    modalRef.innerText = verse.ref; 
+    modalText.innerText = verse.text; 
+    modalText.scrollTop = 0;
+    
+    // Create Chapter Button
+    const chapterBtn = document.createElement('button'); 
+    chapterBtn.className = 'action-btn';
+    chapterBtn.innerText = `View Chapter (${verse.chapterId})`; 
+    chapterBtn.onclick = () => viewChapter(verse.chapterId);
     modalFooter.appendChild(chapterBtn);
 }
 
 function viewChapter(chapterId) {
-    currentChapterIndex = chapterList.indexOf(chapterId); if (currentChapterIndex === -1) return;
+    currentChapterIndex = chapterList.indexOf(chapterId); 
+    if (currentChapterIndex === -1) return;
+    
     loadChapterContent(chapterId);
-    prevBtn.classList.remove('hidden'); nextBtn.classList.remove('hidden'); updateNavButtons(); modalFooter.innerHTML = '';
+    
+    // Show arrows
+    document.getElementById('prev-chapter-btn').classList.remove('hidden');
+    document.getElementById('next-chapter-btn').classList.remove('hidden');
+    
+    updateNavButtons();
+    document.querySelector('.modal-footer').innerHTML = '';
 }
 
 function loadChapterContent(chapterId) {
+    const modalRef = document.querySelector('.modal-ref');
+    const modalText = document.getElementById('modal-text');
+    
     const chapterVerses = allVerses.filter(v => v.chapterId === chapterId);
     const fullText = chapterVerses.map(v => {
         const parts = v.ref.split(':'); const num = parts.length > 1 ? parts[1].trim() : '';
         return num ? `<b>${num}</b> ${v.text}` : v.text;
     }).join('\n\n');
-    modalRef.innerText = chapterId; modalText.innerHTML = fullText; modalText.scrollTop = 0;
+    
+    modalRef.innerText = chapterId; 
+    modalText.innerHTML = fullText; 
+    modalText.scrollTop = 0;
 }
+
 function updateNavButtons() {
+    const prevBtn = document.getElementById('prev-chapter-btn');
+    const nextBtn = document.getElementById('next-chapter-btn');
     prevBtn.style.opacity = currentChapterIndex <= 0 ? '0.3' : '1';
     nextBtn.style.opacity = currentChapterIndex >= chapterList.length - 1 ? '0.3' : '1';
 }
+
 function navigateChapter(d) {
     const newIdx = currentChapterIndex + d;
     if (newIdx >= 0 && newIdx < chapterList.length) {
         currentChapterIndex = newIdx;
+        const modalText = document.getElementById('modal-text');
         modalText.style.opacity = 0;
-        setTimeout(() => { loadChapterContent(chapterList[newIdx]); updateNavButtons(); modalText.style.opacity = 1; }, 150);
+        setTimeout(() => { 
+            loadChapterContent(chapterList[newIdx]); 
+            updateNavButtons(); 
+            modalText.style.opacity = 1; 
+        }, 150);
     }
 }
-prevBtn.onclick = () => navigateChapter(-1); nextBtn.onclick = () => navigateChapter(1);
-
-// CLOSE BUTTON LOGIC
-function closeMainPopup() { modalOverlay.classList.add('hidden'); }
-mainCloseBtn.onclick = closeMainPopup;
-modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeMainPopup(); });
-
-// SWIPE LOGIC (Fixed)
-let ts = 0;
-modalText.addEventListener('touchstart', (e) => ts = e.changedTouches[0].screenX, {passive: true});
-modalText.addEventListener('touchend', (e) => {
-    if (nextBtn.classList.contains('hidden')) return;
-    const dist = ts - e.changedTouches[0].screenX;
-    if (dist > 50) navigateChapter(1); else if (dist < -50) navigateChapter(-1);
-}, {passive: true});
-
-if(legalLink) legalLink.onclick = (e) => { e.preventDefault(); openPopup("Legal Disclosure", legalTextContent); };
