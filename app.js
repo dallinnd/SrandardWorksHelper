@@ -27,7 +27,11 @@ let allVerses = [];
 let uniqueWords = [];
 let chapterList = [];
 let activeCategories = new Set(BOOKS_CONFIG.map(b => b.id)); 
-let legalTextContent = "Standard Works Data. All scripture is sourced from https://scriptures.nephi.org/. If you have any concerns about the app's operation or want to request a features please email designflo.customerservice@gmail.com.";
+let legalTextContent = "Standard Works Data.";
+
+// Search Toggles
+let searchRefEnabled = true;
+let searchTextEnabled = true;
 
 let currentSearchResults = [];
 let renderedCount = 0;
@@ -80,7 +84,6 @@ function initUI() {
     if(mainCloseBtn) mainCloseBtn.onclick = () => modalOverlay.classList.add('hidden');
     if(modalOverlay) modalOverlay.onclick = (e) => { if (e.target === modalOverlay) modalOverlay.classList.add('hidden'); };
 
-    // Swipe Gestures
     const modalContent = document.querySelector('.modal-content');
     let touchStartX = 0;
     
@@ -104,13 +107,14 @@ function initUI() {
     if(nextBtn) nextBtn.onclick = () => navigateChapter(1);
 }
 
-// --- CORE LOGIC ---
-
+// --- UPDATED FILTERS RENDER ---
 function renderFilters() {
     const filtersContainer = document.getElementById('category-filters');
     const input = document.getElementById('search-input');
     
     filtersContainer.innerHTML = '';
+
+    // 1. Render Book Categories
     BOOKS_CONFIG.forEach(book => {
         const btn = document.createElement('button');
         btn.className = `filter-chip ${activeCategories.has(book.id) ? 'active' : ''}`;
@@ -127,6 +131,27 @@ function renderFilters() {
         };
         filtersContainer.appendChild(btn);
     });
+
+    // Separator
+    const sep = document.createElement('div');
+    sep.style.cssText = "width: 1px; height: 20px; background: var(--border); margin: 0 5px;";
+    filtersContainer.appendChild(sep);
+
+    // 2. Render Search Type Toggles (Ref & Text)
+    const createToggle = (label, isEnabled, toggleFn) => {
+        const btn = document.createElement('button');
+        btn.className = `filter-chip ${isEnabled ? 'active-secondary' : ''}`;
+        btn.innerText = label;
+        btn.onclick = () => {
+            toggleFn();
+            btn.classList.toggle('active-secondary');
+            if (input.value.length > 2) performSearch(input.value);
+        };
+        filtersContainer.appendChild(btn);
+    };
+
+    createToggle("Search Ref", searchRefEnabled, () => searchRefEnabled = !searchRefEnabled);
+    createToggle("Search Text", searchTextEnabled, () => searchTextEnabled = !searchTextEnabled);
 }
 
 async function loadAllBooks() {
@@ -196,8 +221,6 @@ function parseBookText(fullText, config, wordSet, chapterSet) {
     });
 }
 
-// --- SEARCH & SUGGESTIONS ---
-
 function handleSuggestions(e) {
     const val = e.target.value.toLowerCase();
     const suggestionsArea = document.getElementById('suggestions-area');
@@ -222,17 +245,31 @@ function performSearch(query) {
     resultsArea.innerHTML = '';
     const q = query.toLowerCase();
     
-    // 1. SEARCH: Check matches in TEXT OR REFERENCE
-    // We create two groups: "Ref Matches" (High Priority) and "Text Matches" (Low Priority)
     let refMatches = [];
     let textMatches = [];
 
+    // Ensure at least one type is selected
+    if (!searchRefEnabled && !searchTextEnabled) {
+        resultsArea.innerHTML = '<div class="placeholder-msg">Enable "Search Ref" or "Search Text".</div>';
+        return;
+    }
+
     allVerses.forEach(v => {
+        // 1. Category Filter
         if (!activeCategories.has(v.source)) return;
 
-        const matchRef = v.ref.toLowerCase().includes(q);
-        const matchText = v.text.toLowerCase().includes(q);
+        // 2. Search Type Logic
+        let matchRef = false;
+        let matchText = false;
 
+        if (searchRefEnabled) {
+            matchRef = v.ref.toLowerCase().includes(q);
+        }
+        if (searchTextEnabled) {
+            matchText = v.text.toLowerCase().includes(q);
+        }
+
+        // 3. Bucket Sorting
         if (matchRef) {
             refMatches.push(v);
         } else if (matchText) {
@@ -240,7 +277,6 @@ function performSearch(query) {
         }
     });
 
-    // Combine: Ref matches first, then text matches
     currentSearchResults = [...refMatches, ...textMatches];
 
     if (currentSearchResults.length === 0) { 
@@ -264,11 +300,16 @@ function renderNextBatch(highlightQuery) {
     batch.forEach(verse => {
         const box = document.createElement('div'); box.className = 'verse-box';
         
-        // Highlight Query in Text
-        const snippet = verse.text.replace(new RegExp(`(${highlightQuery})`, 'gi'), '<b style="color:var(--primary);">$1</b>');
-        
-        // Highlight Query in Reference (NEW)
-        const refDisplay = verse.ref.replace(new RegExp(`(${highlightQuery})`, 'gi'), '<span style="background:rgba(37,99,235,0.1); color:var(--primary);">$1</span>');
+        let snippet = verse.text;
+        let refDisplay = verse.ref;
+
+        // Conditional Highlighting
+        if (searchTextEnabled) {
+            snippet = verse.text.replace(new RegExp(`(${highlightQuery})`, 'gi'), '<b style="color:var(--primary);">$1</b>');
+        }
+        if (searchRefEnabled) {
+            refDisplay = verse.ref.replace(new RegExp(`(${highlightQuery})`, 'gi'), '<span style="background:rgba(37,99,235,0.1); color:var(--primary);">$1</span>');
+        }
 
         const sourceBadge = BOOKS_CONFIG.find(b => b.id === verse.source).name;
 
@@ -298,8 +339,6 @@ function updateStatus(msg) {
     const el = document.querySelector('.placeholder-msg');
     if(el) el.innerText = msg;
 }
-
-// --- MODAL & NAV ---
 
 function openPopup(verseOrTitle, textIfRef) {
     const modalOverlay = document.getElementById('modal-overlay');
