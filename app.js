@@ -25,7 +25,7 @@ const BOOKS_CONFIG = [
 // Global State
 let allVerses = [];
 let uniqueWords = [];
-let chapterList = [];
+let chapterList = []; // Ordered List of ALL Chapters
 let activeCategories = new Set(BOOKS_CONFIG.map(b => b.id)); 
 let legalTextContent = "Standard Works Data.";
 let searchRefEnabled = true;
@@ -33,9 +33,9 @@ let searchTextEnabled = true;
 
 // Navigation State
 let currentSearchResults = [];
-let currentResultIndex = -1; // Index within search results
-let currentChapterIndex = -1; // Index within full chapter list
-let viewMode = 'verse'; // 'verse' (60%) or 'chapter' (90%)
+let currentResultIndex = -1; // Position in Search Results
+let currentChapterIndex = -1; // Position in Master Chapter List
+let viewMode = 'verse'; // 'verse' or 'chapter'
 
 let renderedCount = 0;
 const BATCH_SIZE = 50;
@@ -109,19 +109,34 @@ function initUI() {
     if(nextBtn) nextBtn.onclick = () => handleNavigation(1);
 }
 
-// --- NAVIGATION HANDLER (The Brain) ---
+// --- NAVIGATION LOGIC (FIXED) ---
 function handleNavigation(direction) {
     if (viewMode === 'verse') {
-        // Navigate Search Results
+        // --- VERSE MODE: Navigate Search Results ---
         const newIndex = currentResultIndex + direction;
+        
+        // Bounds Check
         if (newIndex >= 0 && newIndex < currentSearchResults.length) {
+            currentResultIndex = newIndex;
             openVerseView(currentSearchResults[newIndex], newIndex);
         }
+
     } else {
-        // Navigate Chapters
+        // --- CHAPTER MODE: Navigate Master Chapter List ---
         const newIndex = currentChapterIndex + direction;
+
+        // Bounds Check
         if (newIndex >= 0 && newIndex < chapterList.length) {
-            loadChapterContent(chapterList[newIndex]);
+            currentChapterIndex = newIndex;
+            const newChapterId = chapterList[newIndex];
+
+            // Visual Fade
+            const modalText = document.getElementById('modal-text');
+            modalText.style.opacity = 0;
+            setTimeout(() => { 
+                loadChapterContent(newChapterId);
+                modalText.style.opacity = 1; 
+            }, 150);
         }
     }
 }
@@ -296,7 +311,6 @@ function renderNextBatch(highlightQuery) {
             </div>
             <div class="verse-snippet">${snippet}</div>`;
         
-        // Pass the index so we know where we are in the list
         box.onclick = () => openVerseView(verse, globalIndex);
         resultsArea.appendChild(box);
     });
@@ -318,17 +332,15 @@ function updateStatus(msg) {
     if(el) el.innerText = msg;
 }
 
-// --- POPUP: VERSE VIEW vs CHAPTER VIEW ---
+// --- POPUP VIEWS ---
 
 function openPopup(title, text) {
-    // Legacy support for Legal Text
     const modalOverlay = document.getElementById('modal-overlay');
     const modalRef = document.querySelector('.modal-ref');
     const modalText = document.getElementById('modal-text');
     const modalContent = document.querySelector('.modal-content');
     const modalFooter = document.querySelector('.modal-footer') || createModalFooter();
     
-    // Reset to "Short" view
     viewMode = 'verse';
     modalContent.classList.add('short');
     
@@ -337,13 +349,13 @@ function openPopup(title, text) {
     modalText.innerText = text;
     modalFooter.innerHTML = '';
     
-    // Hide arrows for legal text
+    // Hide arrows for legal
     document.getElementById('prev-chapter-btn').classList.add('hidden');
     document.getElementById('next-chapter-btn').classList.add('hidden');
 }
 
 function openVerseView(verse, index) {
-    viewMode = 'verse'; // Important Flag
+    viewMode = 'verse';
     currentResultIndex = index;
     
     const modalOverlay = document.getElementById('modal-overlay');
@@ -355,21 +367,19 @@ function openVerseView(verse, index) {
     const nextBtn = document.getElementById('next-chapter-btn');
 
     modalOverlay.classList.remove('hidden');
-    modalContent.classList.add('short'); // 60% Height
+    modalContent.classList.add('short');
 
     modalRef.innerText = verse.ref;
     modalText.innerText = verse.text;
     modalText.scrollTop = 0;
 
-    // Show Arrows
     prevBtn.classList.remove('hidden');
     nextBtn.classList.remove('hidden');
     
-    // Update Arrow State (Disable if start/end of list)
+    // Dim arrows if at start/end of list
     prevBtn.style.opacity = index <= 0 ? '0.3' : '1';
     nextBtn.style.opacity = index >= currentSearchResults.length - 1 ? '0.3' : '1';
 
-    // Footer: View Chapter Button
     modalFooter.innerHTML = '';
     const chapterBtn = document.createElement('button'); 
     chapterBtn.className = 'action-btn';
@@ -379,8 +389,11 @@ function openVerseView(verse, index) {
 }
 
 function viewChapter(chapterId) {
-    viewMode = 'chapter'; // Switch Mode
+    viewMode = 'chapter';
+    
+    // CRITICAL FIX: Find correct index in master list
     currentChapterIndex = chapterList.indexOf(chapterId); 
+    
     if (currentChapterIndex === -1) return;
     
     const modalContent = document.querySelector('.modal-content');
@@ -407,9 +420,10 @@ function loadChapterContent(chapterId) {
     modalText.innerHTML = fullText; 
     modalText.scrollTop = 0;
 
-    // Show/Update Arrows
     prevBtn.classList.remove('hidden');
     nextBtn.classList.remove('hidden');
+    
+    // Dim arrows if at start/end of chapter list
     prevBtn.style.opacity = currentChapterIndex <= 0 ? '0.3' : '1';
     nextBtn.style.opacity = currentChapterIndex >= chapterList.length - 1 ? '0.3' : '1';
 }
